@@ -99,15 +99,8 @@ impl Decoder for LTSVDecoder {
             let k = pair.next();
             let v = pair.next();
             match (k, v) {
-                (Some(name), None) => match name.len() == 0 {
-                    true => println!("Missing name and value for a LTSV record"),
-                    false => println!("Missing value for name '{}'", name),
-                },
-                (None, Some(value)) => match value.len() == 0 {
-                    true => println!("Missing name and value for a LTSV record"),
-                    false => println!("Missing name for value '{}'", value),
-                },
                 (None, None) => println!("{}", "Missing name and value for a LTSV record"),
+                (Some(_), None) | (None, Some(_)) => println!("Invalid log record: [{:?}]", &line),
                 (Some(name), Some(value)) => {
                     match name {
                         "time" => {
