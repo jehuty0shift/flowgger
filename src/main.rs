@@ -11,17 +11,23 @@ extern crate rand;
 extern crate redis;
 extern crate serde_json;
 extern crate toml;
+extern crate env_logger;
+
+#[macro_use]
+extern crate log;
+
 
 mod flowgger;
+
 pub use crate::flowgger::record_capnp;
 
 use clap::{App, Arg};
-use std::io::{stderr, Write};
 
 const DEFAULT_CONFIG_FILE: &'static str = "flowgger.toml";
-const FLOWGGER_VERSION_STRING: &'static str = "0.2.6";
+const FLOWGGER_VERSION_STRING: &'static str = env!("CARGO_PKG_VERSION");
 
 fn main() {
+    env_logger::init();
     let matches = App::new("Flowgger")
         .version(FLOWGGER_VERSION_STRING)
         .about("A fast, simple and lightweight data collector")
@@ -34,6 +40,6 @@ fn main() {
     let config_file = matches
         .value_of("config_file")
         .unwrap_or(DEFAULT_CONFIG_FILE);
-    let _ = writeln!(stderr(), "Flowgger {}", FLOWGGER_VERSION_STRING);
+    info!("Flowgger {}", FLOWGGER_VERSION_STRING);
     flowgger::start(config_file)
 }

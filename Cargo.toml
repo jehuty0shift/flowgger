@@ -3,7 +3,7 @@ cargo-features = ["edition"]
 [package]
 edition = "2018"
 name = "flowgger"
-version = "0.2.6"
+version = "0.2.7"
 authors = ["Frank Denis <github@pureftpd.org>"]
 build = "build.rs"
 
@@ -28,6 +28,7 @@ redis = "*"
 serde = "~0.8"
 serde_json = "~0.8"
 toml = "~0.2"
+env_logger = "0.6"
 
 [dependencies.coio]
 git = "https://github.com/zonyitoo/coio-rs"

@@ -4,7 +4,6 @@ use crate::flowgger::decoder::Decoder;
 use crate::flowgger::encoder::Encoder;
 use redis;
 use redis::{Commands, Connection, RedisResult};
-use std::io::{stderr, Write};
 use std::process::exit;
 use std::sync::mpsc::SyncSender;
 use std::thread;
@@ -98,7 +97,7 @@ impl RedisWorker {
         let queue_key: &str = &self.config.queue_key;
         let queue_key_tmp: &str = &format!("{}.tmp.{}", queue_key, self.tid);
         let redis_cnx = self.redis_cnx;
-        println!(
+        debug!(
             "Connected to Redis [{}], pulling messages from key [{}]",
             self.config.connect, queue_key
         );
@@ -113,7 +112,7 @@ impl RedisWorker {
                 Ok(line) => line,
             };
             if let Err(e) = handle_record(&line, &self.tx, &decoder, &encoder) {
-                let _ = writeln!(stderr(), "{}: [{}]", e, line.trim());
+                error!("{}: [{}]", e, line.trim());
             }
             let res: RedisResult<u8> = redis_cnx.lrem(queue_key_tmp as &str, 1, line as String);
             if let Err(e) = res {
@@ -138,7 +137,7 @@ impl Input for RedisInput {
             jids.push(thread::spawn(move || {
                 let worker = RedisWorker::new(tid, config, tx, decoder, encoder);
                 if let Err(e) = worker.run() {
-                    let _ = writeln!(stderr(), "Redis connection lost, aborting - {}", e);
+                    error!("Redis connection lost, aborting - {}", e);
                 }
                 exit(1);
             }));

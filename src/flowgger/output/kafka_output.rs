@@ -2,12 +2,11 @@ use super::Output;
 use crate::flowgger::config::Config;
 use crate::flowgger::merger::Merger;
 use kafka::producer::{Compression, Producer, Record, RequiredAcks};
-use std::io::{stderr, Write};
 use std::process::exit;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const KAFKA_DEFAULT_ACKS: i16 = 0;
 const KAFKA_DEFAULT_COALESCE: usize = 1;
@@ -28,6 +27,7 @@ struct KafkaConfig {
     timeout: Duration,
     coalesce: usize,
     compression: Compression,
+    flush_interval: Option<Duration>,
 }
 
 struct KafkaWorker<'a> {
@@ -35,6 +35,7 @@ struct KafkaWorker<'a> {
     producer: Producer,
     config: KafkaConfig,
     queue: Vec<Record<'a, (), Vec<u8>>>,
+    last_send: Instant,
 }
 
 impl<'a> KafkaWorker<'a> {
@@ -52,7 +53,7 @@ impl<'a> KafkaWorker<'a> {
         let producer = match producer.create() {
             Ok(producer) => producer,
             Err(e) => {
-                println!("Unable to connect to Kafka: [{}]", e);
+                error!("Unable to connect to Kafka: [{}]", e);
                 exit(1);
             }
         };
@@ -62,6 +63,7 @@ impl<'a> KafkaWorker<'a> {
             producer: producer,
             config: config,
             queue: queue,
+            last_send: Instant::now(),
         }
     }
 
@@ -74,13 +76,13 @@ impl<'a> KafkaWorker<'a> {
             match self
                 .producer
                 .send(&Record::from_value(&self.config.topic, bytes))
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("Kafka not responsive: [{}]", e);
-                    exit(1);
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Kafka not responsive: [{}]", e);
+                        exit(1);
+                    }
                 }
-            }
         }
     }
 
@@ -98,15 +100,31 @@ impl<'a> KafkaWorker<'a> {
             };
             let queue = &mut self.queue;
             queue.push(message);
+            trace!("Queue size: {}", queue.len());
             if queue.len() >= self.config.coalesce {
+                debug!("coalesce reached!");
                 match self.producer.send_all(queue) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Kafka not responsive: [{}]", e);
+                        error!("Kafka not responsive: [{}]", e);
                         exit(1);
                     }
                 }
                 queue.clear();
+                self.last_send = Instant::now();
+            } else if self.config.flush_interval.is_some() == true {
+                if Instant::now().duration_since(self.last_send) > self.config.flush_interval.unwrap() {
+                    debug!("flush_interval reached!");
+                    match self.producer.send_all(queue) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!("Kafka not responsive: [{}]", e);
+                            exit(1);
+                        }
+                    }
+                    queue.clear();
+                    self.last_send = Instant::now();
+                }
             }
         }
     }
@@ -166,6 +184,10 @@ impl KafkaOutput {
                 x.as_integer()
                     .expect("output.kafka_coalesce must be a size integer") as usize
             });
+        let flush_interval = match config.lookup("output.kafka_flush_interval") {
+            Some(data) => Some(Duration::from_millis(data.as_integer().expect("output.kafka_flush_interval must be a size integer") as u64)),
+            None => None
+        };
         let compression = match config
             .lookup("output.kafka_compression")
             .map_or(KAFKA_DEFAULT_COMPRESSION, |x| {
@@ -173,12 +195,12 @@ impl KafkaOutput {
                     .expect("output.kafka_compresion must be a string")
             }).to_lowercase()
             .as_ref()
-        {
-            "none" => Compression::NONE,
-            "gzip" => Compression::GZIP,
-            "snappy" => Compression::SNAPPY,
-            _ => panic!("Unsupported compression method"),
-        };
+            {
+                "none" => Compression::NONE,
+                "gzip" => Compression::GZIP,
+                "snappy" => Compression::SNAPPY,
+                _ => panic!("Unsupported compression method"),
+            };
         let kafka_config = KafkaConfig {
             acks: acks,
             brokers: brokers,
@@ -186,6 +208,7 @@ impl KafkaOutput {
             timeout: timeout,
             coalesce: coalesce,
             compression: compression,
+            flush_interval: flush_interval,
         };
         KafkaOutput {
             config: kafka_config,
@@ -197,7 +220,7 @@ impl KafkaOutput {
 impl Output for KafkaOutput {
     fn start(&self, arx: Arc<Mutex<Receiver<Vec<u8>>>>, merger: Option<Box<Merger>>) {
         if merger.is_some() {
-            let _ = writeln!(stderr(), "Output framing is ignored with the Kafka output");
+            error!( "Output framing is ignored with the Kafka output");
         }
         for _ in 0..self.threads {
             let arx = Arc::clone(&arx);

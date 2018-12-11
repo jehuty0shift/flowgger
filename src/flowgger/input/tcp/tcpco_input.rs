@@ -65,7 +65,7 @@ fn handle_client(
     tcp_config: TcpConfig,
 ) {
     if let Ok(peer_addr) = client.peer_addr() {
-        println!("Connection over TCP from [{}]", peer_addr);
+        debug!("Connection over TCP from [{}]", peer_addr);
     }
     let reader = BufReader::new(client);
     let splitter = match &tcp_config.framing as &str {

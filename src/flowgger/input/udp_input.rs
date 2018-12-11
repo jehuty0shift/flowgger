@@ -3,7 +3,7 @@ use crate::flowgger::config::Config;
 use crate::flowgger::decoder::Decoder;
 use crate::flowgger::encoder::Encoder;
 use flate2::read::{GzDecoder, ZlibDecoder};
-use std::io::{stderr, Read, Write};
+use std::io::Read;
 use std::net::UdpSocket;
 use std::str;
 use std::sync::mpsc::SyncSender;
@@ -47,7 +47,7 @@ impl Input for UdpInput {
             };
             let line = &buf[..length];
             if let Err(e) = handle_record_maybe_compressed(line, &tx, &decoder, &encoder) {
-                let _ = writeln!(stderr(), "{}", e);
+                error!( "{}", e);
             }
         }
     }

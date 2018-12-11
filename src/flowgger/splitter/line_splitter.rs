@@ -1,7 +1,7 @@
 use super::Splitter;
 use crate::flowgger::decoder::Decoder;
 use crate::flowgger::encoder::Encoder;
-use std::io::{stderr, BufRead, BufReader, ErrorKind, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read};
 use std::sync::mpsc::SyncSender;
 
 pub struct LineSplitter;
@@ -20,22 +20,18 @@ impl<T: Read> Splitter<T> for LineSplitter {
                 Err(e) => match e.kind() {
                     ErrorKind::Interrupted => continue,
                     ErrorKind::InvalidInput | ErrorKind::InvalidData => {
-                        let _ = writeln!(stderr(), "Invalid UTF-8 input");
+                        error!("Invalid UTF-8 input");
                         continue;
                     }
                     ErrorKind::WouldBlock => {
-                        let _ = writeln!(
-                            stderr(),
-                            "Client hasn't sent any data for a while - Closing \
-                             idle connection"
-                        );
+                        warn!("Client hasn't sent any data for a while - Closing idle connection");
                         return;
                     }
                     _ => return,
                 },
             };
             if let Err(e) = handle_line(&line, &tx, &decoder, &encoder) {
-                let _ = writeln!(stderr(), "{}: [{}]", e, line.trim());
+                error!("{}: [{}]", e, line.trim());
             }
         }
     }

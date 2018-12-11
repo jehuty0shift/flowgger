@@ -10,7 +10,7 @@ use rand::Rng;
 
 use super::Output;
 use std::io;
-use std::io::{stderr, BufWriter, ErrorKind, Write};
+use std::io::{BufWriter, ErrorKind, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
@@ -83,17 +83,17 @@ impl TlsWorker {
             .split(':')
             .next()
             .expect(&format!("Invalid connection string: {}", connect_chosen));
-        let _ = writeln!(stderr(), "Connected to {}", connect_chosen);
+        error!("Connected to {}", connect_chosen);
         let sslclient = match self.tls_config.connector.connect(hostname, client) {
             Err(_) => {
                 return Err(io::Error::new(
                     io::ErrorKind::ConnectionAborted,
                     "SSL handshake aborted by the server",
-                ))
+                ));
             }
             Ok(sslclient) => sslclient,
         };
-        let _ = writeln!(stderr(), "Completed SSL handshake with {}", connect_chosen);
+        error!("Completed SSL handshake with {}", connect_chosen);
         let mut writer = BufWriter::new(sslclient);
         let merger = &self.merger;
         loop {
@@ -103,7 +103,7 @@ impl TlsWorker {
                     return Err(io::Error::new(
                         io::ErrorKind::Other,
                         "Cannot read the message queue any more",
-                    ))
+                    ));
                 }
             };
             if let Some(ref merger) = *merger {
@@ -141,36 +141,27 @@ impl TlsWorker {
             if let Err(e) = self.handle_connection(&connect_chosen) {
                 match e.kind() {
                     ErrorKind::ConnectionRefused => {
-                        let _ = writeln!(stderr(), "Connection to {} refused", connect_chosen);
+                        error!("Connection to {} refused", connect_chosen);
                     }
                     ErrorKind::ConnectionAborted | ErrorKind::ConnectionReset => {
-                        let _ = writeln!(
-                            stderr(),
-                            "Connection to {} aborted by the server",
-                            connect_chosen
-                        );
+                        warn!("Connection to {} aborted by the server", connect_chosen);
                     }
                     _ => {
-                        let _ = writeln!(
-                            stderr(),
-                            "Error while communicating with {} - {}",
-                            connect_chosen,
-                            e
-                        );
+                        warn!("Error while communicating with {} - {}", connect_chosen, e);
                     }
                 }
             }
             let now = chrono::offset::Utc::now();
             if now.signed_duration_since(last_recovery)
                 > chrono::Duration::milliseconds(i64::from(tls_config.recovery_probe_time))
-            {
-                recovery_delay = f64::from(tls_config.recovery_delay_init);
-            } else if recovery_delay < f64::from(tls_config.recovery_delay_max) {
+                {
+                    recovery_delay = f64::from(tls_config.recovery_delay_init);
+                } else if recovery_delay < f64::from(tls_config.recovery_delay_max) {
                 let mut rng = rand::thread_rng();
                 recovery_delay += rng.gen_range(0.0, recovery_delay);
             }
             thread::sleep(Duration::from_millis(recovery_delay.round() as u64));
-            let _ = writeln!(stderr(), "Attempting to reconnect");
+            error!("Attempting to reconnect");
         }
     }
 }

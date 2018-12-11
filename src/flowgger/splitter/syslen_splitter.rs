@@ -1,7 +1,7 @@
 use super::Splitter;
 use crate::flowgger::decoder::Decoder;
 use crate::flowgger::encoder::Encoder;
-use std::io::{stderr, BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 use std::str;
 use std::sync::mpsc::SyncSender;
 
@@ -20,20 +20,20 @@ impl<T: Read> Splitter<T> for SyslenSplitter {
             let size = match read_msglen(&mut buf_reader) {
                 Ok(size) => size,
                 Err(_) => {
-                    let _ = writeln!(stderr(), "Can't read message's length");
+                    error!( "Can't read message's length");
                     return;
                 }
             };
             let mut buffer = vec![0; size];
             if let Err(e) = buf_reader.read_exact(&mut buffer) {
-                let _ = writeln!(stderr(), "{}", e);
+                error!( "{}", e);
                 return;
             }
 
             let buffer = String::from_utf8(buffer).unwrap();
 
             if let Err(e) = handle_line(&buffer, &tx, &decoder, &encoder) {
-                let _ = writeln!(stderr(), "{}: [{}]", e, buffer.trim());
+                error!( "{}: [{}]", e, buffer.trim());
             }
         }
     }

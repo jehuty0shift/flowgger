@@ -5,7 +5,7 @@ use crate::flowgger::decoder::Decoder;
 use crate::flowgger::encoder::Encoder;
 use crate::flowgger::record::{Record, SDValue, StructuredData, FACILITY_MAX, SEVERITY_MAX};
 use crate::record_capnp;
-use std::io::{stderr, BufReader, Read, Write};
+use std::io::{BufReader, Read};
 use std::sync::mpsc::SyncSender;
 use std::thread;
 use std::time::Duration;
@@ -26,7 +26,7 @@ impl<T: Read> Splitter<T> for CapnpSplitter {
                 match capnp::serialize::read_message(&mut buf_reader, ReaderOptions::new()) {
                     Err(e) => match e.kind {
                         capnp::ErrorKind::Failed | capnp::ErrorKind::Unimplemented => {
-                            let _ = writeln!(stderr(), "Capnp decoding error: {}", e.description);
+                            error!("Capnp decoding error: {}", e.description);
                             return;
                         }
                         capnp::ErrorKind::Overloaded => {
@@ -34,11 +34,7 @@ impl<T: Read> Splitter<T> for CapnpSplitter {
                             continue;
                         }
                         capnp::ErrorKind::Disconnected => {
-                            let _ = writeln!(
-                                stderr(),
-                                "Client hasn't sent any data for a while - Closing \
-                                 idle connection"
-                            );
+                            warn!("Client hasn't sent any data for a while - Closing idle connection");
                             return;
                         }
                     },
@@ -47,14 +43,14 @@ impl<T: Read> Splitter<T> for CapnpSplitter {
             let message: record_capnp::record::Reader = message_reader.get_root().unwrap();
             let record = match handle_message(message) {
                 Err(e) => {
-                    let _ = writeln!(stderr(), "{}", e);
+                    error!("{}", e);
                     continue;
                 }
                 Ok(record) => record,
             };
             match encoder.encode(record) {
                 Err(e) => {
-                    let _ = writeln!(stderr(), "{}", e);
+                    error!("{}", e);
                 }
                 Ok(reencoded) => tx.send(reencoded).unwrap(),
             };
@@ -71,9 +67,9 @@ fn get_pairs(
         .or(Some(0))
         .unwrap() as usize
         + message_extra
-            .and_then(|x| Some(x.len()))
-            .or(Some(0))
-            .unwrap() as usize;
+        .and_then(|x| Some(x.len()))
+        .or(Some(0))
+        .unwrap() as usize;
     let mut pairs = Vec::with_capacity(pairs_count);
     if let Some(message_pairs) = message_pairs {
         for message_pair in message_pairs.iter() {

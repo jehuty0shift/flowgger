@@ -65,11 +65,11 @@ fn handle_client(
     tls_config: TlsConfig,
 ) {
     if let Ok(peer_addr) = client.peer_addr() {
-        println!("Connection over TLS<coroutines> from [{}]", peer_addr);
+        debug!("Connection over TLS<coroutines> from [{}]", peer_addr);
     }
     let sslclient = match tls_config.acceptor.accept(client) {
         Err(_) => {
-            let _ = writeln!(stderr(), "SSL handshake aborted by the client");
+            error!( "SSL handshake aborted by the client");
             return;
         }
         Ok(sslclient) => sslclient,
