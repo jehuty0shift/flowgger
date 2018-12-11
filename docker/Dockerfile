@@ -47,7 +47,7 @@ ENV OPENSSL_INCLUDE_DIR=/opt/libressl/include
 
 RUN set -x && \
     cd /tmp && \
-    git clone https://github.com/jedisct1/flowgger.git && \
+    git clone https://github.com/cdumay/flowgger.git && \
     cd flowgger && \
     cargo build --release --features='coroutines ecdh kafka' && \
     mkdir -p /opt/flowgger/etc /opt/flowgger/bin && \
