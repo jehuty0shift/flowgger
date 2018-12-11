@@ -1,18 +1,51 @@
 use super::Output;
 use crate::flowgger::config::Config;
 use crate::flowgger::merger::Merger;
-use kafka::producer::{Compression, Producer, Record, RequiredAcks};
+use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::process::exit;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use rdkafka::ClientConfig;
+use futures::future::Future;
 
 const KAFKA_DEFAULT_ACKS: i16 = 0;
 const KAFKA_DEFAULT_COALESCE: usize = 1;
 const KAFKA_DEFAULT_COMPRESSION: &'static str = "none";
 const KAFKA_DEFAULT_THREADS: u32 = 1;
 const KAFKA_DEFAULT_TIMEOUT: u64 = 60_000;
+
+#[derive(Clone)]
+pub enum Compression {
+    NONE,
+    GZIP,
+    SNAPPY,
+    LZ4,
+    ZSTD,
+}
+
+impl Compression {
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            Compression::NONE => "none",
+            Compression::GZIP => "gzip",
+            Compression::SNAPPY => "snappy",
+            Compression::LZ4 => "lz4",
+            Compression::ZSTD => "zstd",
+        }
+    }
+    pub fn from_string(data: &str) -> Compression {
+        match data {
+            "none" => Compression::NONE,
+            "gzip" => Compression::GZIP,
+            "snappy" => Compression::SNAPPY,
+            "lz4" => Compression::LZ4,
+            "zstd" => Compression::ZSTD,
+            _ => panic!("Unsupported compression method")
+        }
+    }
+}
 
 pub struct KafkaOutput {
     config: KafkaConfig,
@@ -30,33 +63,25 @@ struct KafkaConfig {
     flush_interval: Option<Duration>,
 }
 
-struct KafkaWorker<'a> {
+struct KafkaWorker {
     arx: Arc<Mutex<Receiver<Vec<u8>>>>,
-    producer: Producer,
+    producer: FutureProducer,
     config: KafkaConfig,
-    queue: Vec<Record<'a, (), Vec<u8>>>,
+    queue: Vec<String>,
     last_send: Instant,
 }
 
-impl<'a> KafkaWorker<'a> {
-    fn new(arx: Arc<Mutex<Receiver<Vec<u8>>>>, config: KafkaConfig) -> KafkaWorker<'a> {
-        let acks = match config.acks {
-            -1 => RequiredAcks::All,
-            0 => RequiredAcks::None,
-            1 => RequiredAcks::One,
-            _ => panic!("Unsupported value for kafka_acks"),
-        };
-        let producer = Producer::from_hosts(config.brokers.clone())
-            .with_required_acks(acks)
-            .with_ack_timeout(config.timeout)
-            .with_compression(config.compression);
-        let producer = match producer.create() {
-            Ok(producer) => producer,
-            Err(e) => {
-                error!("Unable to connect to Kafka: [{}]", e);
-                exit(1);
-            }
-        };
+impl KafkaWorker {
+    fn new(arx: Arc<Mutex<Receiver<Vec<u8>>>>, config: KafkaConfig) -> KafkaWorker {
+        let producer: FutureProducer = ClientConfig::new()
+            .set("bootstrap.servers", &config.brokers.clone().join(","))
+            .set("produce.offset.report", "true")
+            .set("message.timeout.ms", &format!("{}", config.timeout.as_millis()))
+            .set("request.required.acks", &format!("{}", config.acks))
+            .set("compression.codec", config.compression.as_str())
+            .create()
+            .expect("Producer creation error");
+
         let queue = Vec::with_capacity(config.coalesce);
         KafkaWorker {
             arx: arx,
@@ -67,69 +92,87 @@ impl<'a> KafkaWorker<'a> {
         }
     }
 
-    fn run_nocoalesce(&'a mut self) {
+    fn run_nocoalesce(&mut self) {
         loop {
             let bytes = match { self.arx.lock().unwrap().recv() } {
                 Ok(line) => line,
                 Err(_) => return,
             };
-            match self
-                .producer
-                .send(&Record::from_value(&self.config.topic, bytes))
-                {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Kafka not responsive: [{}]", e);
-                        exit(1);
-                    }
+            let future = self.producer.send(FutureRecord::to(&self.config.topic).payload(&bytes).key("flowgger"), 0)
+                .map(move |delivery_status| {
+                    trace!("Delivery status for message received");
+                    delivery_status
+                });
+            match future.wait() {
+                Ok(data) => trace!("Future completed: {:?}", data),
+                Err(e) => {
+                    error!("Kafka not responsive: [{:?}]", e);
+                    exit(1);
                 }
+            }
         }
     }
 
-    fn run_coalesce(&'a mut self) {
+    fn run_coalesce(&mut self) {
         loop {
-            let bytes = match { self.arx.lock().unwrap().recv() } {
-                Ok(line) => line,
+            let data = match { self.arx.lock().unwrap().recv() } {
+                Ok(line) => match String::from_utf8(line) {
+                    Ok(data) => data,
+                    Err(_) => return,
+                },
                 Err(_) => return,
             };
-            let message = Record {
-                key: (),
-                partition: -1,
-                topic: &self.config.topic,
-                value: bytes,
-            };
-            let queue = &mut self.queue;
-            queue.push(message);
-            trace!("Queue size: {}", queue.len());
-            if queue.len() >= self.config.coalesce {
+            self.queue.push(data);
+            trace!("Queue size: {}", self.queue.len());
+            if self.queue.len() >= self.config.coalesce {
                 debug!("coalesce reached!");
-                match self.producer.send_all(queue) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Kafka not responsive: [{}]", e);
-                        exit(1);
+                let futures = self.queue.iter().map(|data| {
+                    let rec = FutureRecord::to(&self.config.topic).payload(&data).key("flowgger");
+                    self.producer.send(rec, 0)
+                        .map(move |delivery_status| {
+                            trace!("Delivery status for message received");
+                            delivery_status
+                        })
+                }).collect::<Vec<_>>();
+                for future in futures {
+                    match future.wait() {
+                        Ok(data) => trace!("Future completed: {:?}", data),
+                        Err(e) => {
+                            error!("Kafka not responsive: [{:?}]", e);
+                            exit(1);
+                        }
                     }
                 }
-                queue.clear();
+                self.queue.clear();
                 self.last_send = Instant::now();
             } else if self.config.flush_interval.is_some() == true {
                 if Instant::now().duration_since(self.last_send) > self.config.flush_interval.unwrap() {
                     debug!("flush_interval reached!");
-                    match self.producer.send_all(queue) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!("Kafka not responsive: [{}]", e);
-                            exit(1);
+                    let futures = self.queue.iter().map(|data| {
+                        let rec = FutureRecord::to(&self.config.topic).payload(&data).key("flowgger");
+                        self.producer.send(rec, 0)
+                            .map(move |delivery_status| {
+                                trace!("Delivery status for message received");
+                                delivery_status
+                            })
+                    }).collect::<Vec<_>>();
+                    for future in futures {
+                        match future.wait() {
+                            Ok(data) => trace!("Future completed: {:?}", data),
+                            Err(e) => {
+                                error!("Kafka not responsive: [{:?}]", e);
+                                exit(1);
+                            }
                         }
                     }
-                    queue.clear();
+                    self.queue.clear();
                     self.last_send = Instant::now();
                 }
             }
         }
     }
 
-    fn run(&'a mut self) {
+    fn run(&mut self) {
         if self.config.coalesce <= 1 {
             self.run_nocoalesce()
         } else {
@@ -188,19 +231,13 @@ impl KafkaOutput {
             Some(data) => Some(Duration::from_millis(data.as_integer().expect("output.kafka_flush_interval must be a size integer") as u64)),
             None => None
         };
-        let compression = match config
+        let compression = Compression::from_string(config
             .lookup("output.kafka_compression")
             .map_or(KAFKA_DEFAULT_COMPRESSION, |x| {
                 x.as_str()
                     .expect("output.kafka_compresion must be a string")
-            }).to_lowercase()
-            .as_ref()
-            {
-                "none" => Compression::NONE,
-                "gzip" => Compression::GZIP,
-                "snappy" => Compression::SNAPPY,
-                _ => panic!("Unsupported compression method"),
-            };
+            }).to_lowercase().as_ref()
+        );
         let kafka_config = KafkaConfig {
             acks: acks,
             brokers: brokers,
@@ -220,7 +257,7 @@ impl KafkaOutput {
 impl Output for KafkaOutput {
     fn start(&self, arx: Arc<Mutex<Receiver<Vec<u8>>>>, merger: Option<Box<Merger>>) {
         if merger.is_some() {
-            error!( "Output framing is ignored with the Kafka output");
+            error!("Output framing is ignored with the Kafka output");
         }
         for _ in 0..self.threads {
             let arx = Arc::clone(&arx);

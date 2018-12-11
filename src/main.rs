@@ -1,3 +1,4 @@
+#![feature(duration_as_u128)]
 extern crate capnp;
 extern crate chrono;
 extern crate clap;
@@ -5,13 +6,14 @@ extern crate clap;
 extern crate coio;
 extern crate flate2;
 #[cfg(feature = "kafka")]
-extern crate kafka;
+extern crate rdkafka;
 extern crate openssl;
 extern crate rand;
 extern crate redis;
 extern crate serde_json;
 extern crate toml;
 extern crate env_logger;
+extern crate futures;
 
 #[macro_use]
 extern crate log;

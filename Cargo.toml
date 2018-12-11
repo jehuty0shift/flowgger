@@ -10,6 +10,7 @@ build = "build.rs"
 [features]
 capnp-recompile = ["capnpc"]
 coroutines = ["coio"]
+kafka = ["rdkafka"]
 
 default = ["kafka"]
 
@@ -29,14 +30,15 @@ serde = "~0.8"
 serde_json = "~0.8"
 toml = "~0.2"
 env_logger = "0.6"
+futures = "0.1"
 
 [dependencies.coio]
 git = "https://github.com/zonyitoo/coio-rs"
 optional = true
 
-[dependencies.kafka]
-git = "https://github.com/spicavigo/kafka-rust"
-features = ["snappy", "gzip", "security"]
+[dependencies.rdkafka]
+version = "0.17"
+features = ["ssl", "sasl"]
 optional = true
 
 [dependencies.openssl]
