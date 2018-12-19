@@ -98,7 +98,7 @@ impl KafkaWorker {
                 Ok(line) => line,
                 Err(_) => return,
             };
-            let future = self.producer.send::<u8, u8>(FutureRecord::to(&self.config.topic).payload(&bytes), 0)
+            let future = self.producer.send::<Vec<u8>, Vec<u8>>(FutureRecord::to(&self.config.topic).payload(&bytes), 0)
                 .map(move |delivery_status| {
                     trace!("Delivery status for message received");
                     delivery_status
@@ -128,7 +128,7 @@ impl KafkaWorker {
                 debug!("coalesce reached!");
                 let futures = self.queue.iter().map(|data| {
                     let rec = FutureRecord::to(&self.config.topic).payload(&data);
-                    self.producer.send::<String, String>(rec, 0)
+                    self.producer.send::<&String, &String>(rec, 0)
                         .map(move |delivery_status| {
                             trace!("Delivery status for message received");
                             delivery_status
@@ -150,7 +150,7 @@ impl KafkaWorker {
                     debug!("flush_interval reached!");
                     let futures = self.queue.iter().map(|data| {
                         let rec = FutureRecord::to(&self.config.topic).payload(&data);
-                        self.producer.send::<String, String>(rec, 0)
+                        self.producer.send::<&String, &String>(rec, 0)
                             .map(move |delivery_status| {
                                 trace!("Delivery status for message received");
                                 delivery_status
