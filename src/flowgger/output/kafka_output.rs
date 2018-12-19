@@ -2,12 +2,10 @@ use super::Output;
 use crate::flowgger::config::Config;
 use crate::flowgger::merger::Merger;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use std::process::exit;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use rdkafka::ClientConfig;
-use futures::future::Future;
 use std::collections::BTreeMap;
 use toml::Value;
 
@@ -50,21 +48,9 @@ impl KafkaWorker {
                 Ok(line) => line,
                 Err(_) => return,
             };
-            let future = self.producer.send::<Vec<u8>, Vec<u8>>(FutureRecord::to(&self.config.topic).payload(&bytes), 0)
-                .map(move |delivery_status| {
-                    trace!("Delivery status for message received");
-                    delivery_status
-                });
-            match future.wait() {
-                Ok(data) => trace!("Future completed: {:?}", data),
-                Err(e) => {
-                    error!("Kafka not responsive: [{:?}]", e);
-                    exit(1);
-                }
-            }
+            self.producer.send::<Vec<u8>, Vec<u8>>(FutureRecord::to(&self.config.topic).payload(&bytes), 0);
         }
     }
-
 }
 
 impl KafkaOutput {
