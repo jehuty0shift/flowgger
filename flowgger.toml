@@ -18,14 +18,7 @@ tcp_threads = 2
 
 ### Kafka output
 type = "kafka"
-kafka_brokers = [ "kafka-1.alpha.thot.ovh.com:9094", "kafka-2.alpha.thot.ovh.com:9094" ]
-kafka_topic = "alpha.log1"
-kafka_threads = 1
-kafka_coalesce = 10
-kafka_timeout = 30000
-kafka_acks = 0
-kafka_compression = "gzip"
-kafka_flush_interval = 6000
+topic = "alpha.log1"
 
 ### Output format and parameters
 ### JSON (GELF)
@@ -33,3 +26,10 @@ format = "gelf"
 
 [output.gelf_extra]
 X-OVH-INPUT = "gelf-clear"
+
+[output.librdkafka]
+"bootstrap.servers" = "kafka-1.alpha.thot.ovh.com:9094,kafka-2.alpha.thot.ovh.com:9094"
+"produce.offset.report" = "true"
+"message.timeout.ms" = "30000"
+"request.required.acks" = "0"
+"compression.codec" = "gzip"
