@@ -98,7 +98,7 @@ impl KafkaWorker {
                 Ok(line) => line,
                 Err(_) => return,
             };
-            let future = self.producer.send(FutureRecord::to(&self.config.topic).payload(&bytes).key("flowgger"), 0)
+            let future = self.producer.send::<u8, u8>(FutureRecord::to(&self.config.topic).payload(&bytes), 0)
                 .map(move |delivery_status| {
                     trace!("Delivery status for message received");
                     delivery_status
@@ -127,8 +127,8 @@ impl KafkaWorker {
             if self.queue.len() >= self.config.coalesce {
                 debug!("coalesce reached!");
                 let futures = self.queue.iter().map(|data| {
-                    let rec = FutureRecord::to(&self.config.topic).payload(&data).key("flowgger");
-                    self.producer.send(rec, 0)
+                    let rec = FutureRecord::to(&self.config.topic).payload(&data);
+                    self.producer.send::<String, String>(rec, 0)
                         .map(move |delivery_status| {
                             trace!("Delivery status for message received");
                             delivery_status
@@ -149,8 +149,8 @@ impl KafkaWorker {
                 if Instant::now().duration_since(self.last_send) > self.config.flush_interval.unwrap() {
                     debug!("flush_interval reached!");
                     let futures = self.queue.iter().map(|data| {
-                        let rec = FutureRecord::to(&self.config.topic).payload(&data).key("flowgger");
-                        self.producer.send(rec, 0)
+                        let rec = FutureRecord::to(&self.config.topic).payload(&data);
+                        self.producer.send::<String, String>(rec, 0)
                             .map(move |delivery_status| {
                                 trace!("Delivery status for message received");
                                 delivery_status
