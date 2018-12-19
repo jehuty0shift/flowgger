@@ -48,7 +48,7 @@ impl KafkaWorker {
                 Ok(line) => line,
                 Err(_) => return,
             };
-            self.producer.send::<Vec<u8>, Vec<u8>>(FutureRecord::to(&self.config.topic).payload(&bytes), 0);
+            self.producer.send::<Vec<u8>, Vec<u8>>(FutureRecord::to(&self.config.topic).payload(&bytes), -1);
         }
     }
 }
