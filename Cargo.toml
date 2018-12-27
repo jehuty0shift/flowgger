@@ -1,7 +1,7 @@
 cargo-features = ["edition"]
 
 [package]
-edition = "2018"
+#edition = "2018"
 name = "flowgger"
 version = "0.2.8"
 authors = ["Frank Denis <github@pureftpd.org>"]
@@ -42,7 +42,7 @@ features = ["ssl", "sasl"]
 optional = true
 
 [dependencies.openssl]
-version = "~0.9"
+version = "~0.10"
 
 [profile.release]
 opt-level = 3

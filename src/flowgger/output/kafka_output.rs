@@ -79,9 +79,9 @@ impl Output for KafkaOutput {
         }
         let tarx = Arc::clone(&arx);
         let tconfig = self.config.clone();
-        thread::spawn(move || {
+        thread::Builder::new().name(String::from("kafka-output")).spawn(move || {
             let mut worker = KafkaWorker::new(tarx, tconfig);
             worker.run();
-        });
+        }).unwrap();
     }
 }
