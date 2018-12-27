@@ -10,8 +10,11 @@ use std::collections::BTreeMap;
 use toml::Value;
 
 pub struct KafkaOutput {
-    config: KafkaConfig
+    config: KafkaConfig,
+    threads: u32,
 }
+
+const KAFKA_DEFAULT_THREADS: u32 = 1;
 
 #[derive(Clone)]
 struct KafkaConfig {
@@ -21,8 +24,8 @@ struct KafkaConfig {
 
 struct KafkaWorker {
     arx: Arc<Mutex<Receiver<Vec<u8>>>>,
-    producer: FutureProducer,
     config: KafkaConfig,
+    producer: FutureProducer,
 }
 
 impl KafkaWorker {
@@ -63,11 +66,18 @@ impl KafkaOutput {
             .lookup("output.librdkafka").expect("output.librdkafka must be set")
             .as_table().expect("output.librdkafka must be set")
             .to_owned();
+        let threads = config
+            .lookup("output.kafka_threads")
+            .map_or(KAFKA_DEFAULT_THREADS, |x| {
+                x.as_integer()
+                    .expect("output.kafka_threads must be a 32-bit integer") as u32
+            });
         KafkaOutput {
             config: KafkaConfig {
                 topic: topic,
                 librdkafka: librdconfig,
-            }
+            },
+            threads: threads
         }
     }
 }
@@ -77,11 +87,13 @@ impl Output for KafkaOutput {
         if merger.is_some() {
             error!("Output framing is ignored with the Kafka output");
         }
-        let tarx = Arc::clone(&arx);
-        let tconfig = self.config.clone();
-        thread::Builder::new().name(String::from("kafka-output")).spawn(move || {
-            let mut worker = KafkaWorker::new(tarx, tconfig);
-            worker.run();
-        }).unwrap();
+        for id in 0..self.threads {
+            let tarx = Arc::clone(&arx);
+            let tconfig = self.config.clone();
+            thread::Builder::new().name(format!("kafka-output-{}",id)).spawn(move || {
+                let mut worker = KafkaWorker::new(tarx, tconfig);
+                worker.run();
+            }).unwrap();
+        }
     }
 }
