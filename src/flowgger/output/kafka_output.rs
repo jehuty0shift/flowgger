@@ -87,15 +87,7 @@ impl Output for KafkaOutput {
         if merger.is_some() {
             error!("Output framing is ignored with the Kafka output");
         }
-<<<<<<< HEAD
-        let tarx = Arc::clone(&arx);
-        let tconfig = self.config.clone();
-        thread::spawn(move || {
-            let mut worker = KafkaWorker::new(tarx, tconfig);
-            worker.run();
-        });
-=======
-        for id in 0..self.threads {
+       for id in 0..self.threads {
             let tarx = Arc::clone(&arx);
             let tconfig = self.config.clone();
             thread::Builder::new().name(format!("kafka-output-{}",id)).spawn(move || {
@@ -103,6 +95,5 @@ impl Output for KafkaOutput {
                 worker.run();
             }).unwrap();
         }
->>>>>>> dd9905c... re-add threading support back in Kafka Output
     }
 }
